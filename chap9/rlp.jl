@@ -1,5 +1,5 @@
 # Importing packages
-using JuMP, Gurobi, Distributions
+using JuMP, GLPK, Distributions
 
 # Product Data
 no_products = 6
@@ -20,35 +20,35 @@ A = [ 1 1 0 0 1 1 ;
 
 # Solving the deterministic LP problem
 function DLP(x, D)
-  m = Model(solver=GurobiSolver())
+  m = Model(with_optimizer(GLPK.Optimizer))
   @variable(m, y[products] >= 0)
   @objective(m, Max, sum( p[j]*y[j] for j in products) )
 
   # Resource Constraint
-  @constraint(m, rsc_const[i=1:no_resources],
+  @constraint(m, rsc_const[i in 1:no_resources],
           sum( A[i,j]*y[i] for j in products) <= x[i]  )
 
   # Upper Bound
-  @constraint(m, bounds[j=1:no_products], y[j] <= D[j] )
+  @constraint(m, bounds[j in 1:no_products], y[j] <= D[j] )
 
-  solve(m)
-  pi = getdual(rsc_const)
-  return pi
+  JuMP.optimize!(m)
+  pi_val = JuMP.shadow_price.(rsc_const)
+  return pi_val
 end
 
 # Generating N samples
 N = 100
-samples = Array{Float64}(no_products, N)
+samples = Array{Float64}(undef, no_products, N)
 for j in products
   samples[j,:] = rand( Normal(mu[j], sigma[j]), N)
 end
 
 # Obtain the dual variable for each sample
-pi_samples = Array{Float64}(no_resources, N)
+pi_samples = Array{Float64}(undef, no_resources, N)
 for k in 1:N
   pi_samples[:,k] = DLP(x, samples[:,k])
 end
 
 # Compute the average
-pi_estimate = sum(pi_samples,2) / N
+pi_estimate = sum(pi_samples, dims=2) / N
 println("** pi estimate = ",  pi_estimate')
